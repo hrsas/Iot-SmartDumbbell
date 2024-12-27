@@ -1,0 +1,148 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <MPU6050.h>
+
+// LCD and MPU6050 setup
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+MPU6050 mpu;
+
+// Variables for sets, reps, and rest time
+int sets = 2, reps = 5;
+int currentReps = reps, currentSets = sets;
+unsigned long restTime = 10000;  // 15 seconds rest time
+unsigned long timerStart = 0;
+bool repInProgress = false;
+bool restTimerActive = false;
+
+// Thresholds for detecting a bicep curl on Z-axis
+int curlStartThresholdZ = 5000;  // Positive Z threshold
+int curlEndThresholdZ = -5000;  // Negative Z threshold
+
+// Timer for display updates to reduce flickering
+unsigned long lastUpdateTime = 0;
+const unsigned long updateInterval = 500; // Update every 500 ms
+
+// Display values on LCD
+void displayOnLCD() {
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  if (currentSets > 0) {
+    lcd.print("Sets: ");
+    lcd.print(currentSets);
+
+    lcd.setCursor(0, 1);
+    if (currentReps > 0 && !restTimerActive) {
+      lcd.print("Reps: ");
+      lcd.print(currentReps);
+    } else if (restTimerActive) {
+      int remainingSeconds = (restTime - (millis() - timerStart)) / 1000;
+      lcd.print("Rest: ");
+      lcd.print(remainingSeconds);
+      lcd.print("s   ");
+    }
+  } else {
+    lcd.setCursor(0, 0);
+    lcd.print("Workout");
+    lcd.setCursor(0, 1);
+    lcd.print("Done!");
+  }
+}
+
+// Rest Timer Logic
+void startRestTimer() {
+  if (!restTimerActive) {
+    timerStart = millis();
+    restTimerActive = true;
+    displayOnLCD();
+  }
+}
+
+void checkRestTimer() {
+  static int lastDisplayedSecond = -1;
+
+  if (restTimerActive) {
+    unsigned long elapsedTime = millis() - timerStart;
+    int remainingSeconds = (restTime - elapsedTime) / 1000;
+
+    if (remainingSeconds != lastDisplayedSecond) {
+      lastDisplayedSecond = remainingSeconds;
+      displayOnLCD();
+    }
+
+    if (elapsedTime >= restTime) {
+      restTimerActive = false;
+      if (currentSets > 1) {
+        startNextSet();
+      } else {
+        currentSets = 0;
+        displayOnLCD();
+      }
+    }
+  }
+}
+
+// Move to Next Set
+void startNextSet() {
+  currentSets--;
+  currentReps = reps;
+  displayOnLCD();
+}
+
+void setup() {
+  Serial.begin(115200);
+  lcd.init();
+  lcd.backlight();
+
+  mpu.initialize();
+  lcd.setCursor(0, 0);
+  lcd.print("MPU");
+
+  if (mpu.testConnection()) {
+    lcd.setCursor(0, 1);
+    lcd.print("Connected");
+  } else {
+    lcd.setCursor(0, 1);
+    lcd.print("MPU Not Found");
+  }
+
+  displayOnLCD();
+}
+
+void loop() {
+  unsigned long currentTime = millis();
+  if (currentTime - lastUpdateTime > updateInterval) {
+    displayOnLCD();
+    lastUpdateTime = currentTime;
+  }
+
+  checkRepCompletion();
+  checkRestTimer();
+}
+
+// Check if a rep is completed based on MPU6050 acceleration data
+void checkRepCompletion() {
+  int16_t ax, ay, az;
+  mpu.getAcceleration(&ax, &ay, &az);
+
+  if (currentSets > 0 && currentReps > 0) {
+    if (az > curlStartThresholdZ && !repInProgress) {
+      repInProgress = true;
+      Serial.println("Curl started...");
+    }
+
+    if (repInProgress && az < curlEndThresholdZ) {
+      repInProgress = false;
+      currentReps--;
+      Serial.printf("Rep completed! Reps remaining: %d\n", currentReps);
+      displayOnLCD();
+
+      if (currentReps == 0 && currentSets > 1) {
+        startRestTimer();
+      } else if (currentSets == 1 && currentReps == 0) {
+        currentSets = 0;
+        displayOnLCD();
+      }
+    }
+  }
+}

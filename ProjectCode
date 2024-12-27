@@ -24,8 +24,8 @@ bool repInProgress = false;
 bool restTimerActive = false;  
 
 // Thresholds for detecting a bicep curl on X-axis
-int curlStartThresholdX = 5000;  
-int curlEndThresholdX = -5000;    
+int curlStartThresholdZ = 5000;  
+int curlEndThresholdZ = -5000;    
 
 // Timer for display updates to reduce flickering
 unsigned long lastUpdateTime = 0;
@@ -198,12 +198,12 @@ void checkRepCompletion() {
   mpu.getAcceleration(&ax, &ay, &az);
 
   if (currentSets > 0 && currentReps > 0) {
-    if (ax > curlStartThresholdX && !repInProgress) {
+    if (az > curlStartThresholdX && !repInProgress) {
       repInProgress = true;
       Serial.println("Curl started...");
     }
 
-    if (repInProgress && ax < curlEndThresholdX) {
+    if (repInProgress && az < curlEndThresholdX) {
       repInProgress = false;  // Reset rep flag
       currentReps--;  // Decrease rep count
       Serial.printf("Rep completed! Reps remaining: %d\n", currentReps);
